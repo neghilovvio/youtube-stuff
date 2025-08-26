@@ -17,6 +17,7 @@ This powerful Python script downloads YouTube content in the highest available q
 - ⚡ **Lightning-Fast Concurrent Downloads** - Download multiple videos/playlists/channels simultaneously
 - 🗂️ **Intelligent Organization** - Playlists and channels get organized folders
 - 📺 **Full Channel Support** - Download entire YouTube channels with date-organized files
+- 🎬 **YouTube Shorts Support** - Paste any `https://www.youtube.com/shorts/...` link
 - 🎵 **MP3 Audio Option** - Download high-quality audio only in MP3 format
 - 🛡️ **Bulletproof Error Handling** - One failed download won't stop the others
 - 🧠 **Intuitive UX** - Only shows relevant options when needed
@@ -85,6 +86,11 @@ python download.py # python3 download.py
 Enter a single YouTube URL when prompted:
 ```
 Enter YouTube URL(s): https://www.youtube.com/watch?v=Hhb8ghB8lMg
+```
+
+You can also paste a Shorts URL:
+```
+Enter YouTube URL(s): https://www.youtube.com/shorts/s9F8pu5KfyM
 ```
 
 **For single videos, the script automatically optimizes the process by:**
