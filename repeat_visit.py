@@ -49,7 +49,6 @@ def build_driver(browser: str, headless: bool) -> "webdriver.Remote":
 
     if browser == "chrome":
         from selenium.webdriver.chrome.options import Options as ChromeOptions
-        import os
         opts = ChromeOptions()
         if headless:
             opts.add_argument("--headless=new")
@@ -60,13 +59,6 @@ def build_driver(browser: str, headless: bool) -> "webdriver.Remote":
         opts.add_argument("--disable-gpu")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
-        # If GitHub Actions provides CHROME_PATH, use it
-        chrome_path = os.environ.get("CHROME_PATH")
-        if chrome_path:
-            try:
-                opts.binary_location = chrome_path
-            except Exception:
-                pass
         driver = webdriver.Chrome(options=opts)
 
     elif browser == "firefox":
