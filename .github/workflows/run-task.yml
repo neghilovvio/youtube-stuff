@@ -55,6 +55,7 @@ jobs:
         env:
           # Example: pass secrets if needed, define any env vars here
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          PYTHONUNBUFFERED: '1'
         run: |
           echo "Running URL: ${{ matrix.url }}"
-          python repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --headless --progress
+          python -u repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --headless --progress
