@@ -61,7 +61,7 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: |
           echo "Running URL: ${{ matrix.url }}"
-          python -u repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --headless --progress
+          xvfb-run -a python -u repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --progress --reuse
 
       - name: Upload playback artifacts
         if: always()

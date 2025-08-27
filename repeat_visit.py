@@ -61,7 +61,35 @@ def build_driver(browser: str, headless: bool) -> "webdriver.Remote":
         opts.add_argument("--disable-gpu")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
+        # Reduce automation fingerprints
+        opts.add_argument("--disable-blink-features=AutomationControlled")
+        try:
+            opts.add_experimental_option("excludeSwitches", ["enable-automation"])  # type: ignore[arg-type]
+            opts.add_experimental_option("useAutomationExtension", False)  # type: ignore[arg-type]
+        except Exception:
+            pass
+        # Set a realistic UA and language
+        opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+        opts.add_argument("--lang=en-US,en;q=0.9")
+
         driver = webdriver.Chrome(options=opts)
+
+        # Attempt to unset navigator.webdriver for this session
+        try:
+            driver.execute_cdp_cmd(
+                "Page.addScriptToEvaluateOnNewDocument",
+                {
+                    "source": "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+                },
+            )
+        except Exception:
+            # Fallback for non-Chromium or restricted environments
+            try:
+                driver.execute_script(
+                    "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+                )
+            except Exception:
+                pass
 
     elif browser == "firefox":
         from selenium.webdriver.firefox.options import Options as FirefoxOptions
