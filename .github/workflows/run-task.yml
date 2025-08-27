@@ -28,7 +28,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -38,13 +38,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install Chrome (for Selenium)
-        uses: browser-actions/setup-chrome@v1
-        id: setup-chrome
-
-      - name: Show Chrome version
+      - name: Install Xvfb and Chromium
         run: |
-          "${{ steps.setup-chrome.outputs.chrome-path }}" --version
+          sudo apt-get update
+          sudo apt-get install -y xvfb chromium-browser
+          /usr/bin/chromium-browser --version || true
 
       - name: Install Python deps (minimal)
         run: |
@@ -55,12 +53,13 @@ jobs:
         run: |
           mkdir -p artifacts
 
-      - name: Run task
+      - name: Run task (headed Chrome via Xvfb)
         env:
           # Example: pass secrets if needed, define any env vars here
           PYTHONUNBUFFERED: '1'
         run: |
           echo "Running URL: ${{ matrix.url }}"
+          export CHROME_BIN=/usr/bin/chromium-browser
           xvfb-run -a python -u repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --progress --reuse
 
       - name: Upload playback artifacts
