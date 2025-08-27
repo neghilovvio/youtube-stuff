@@ -49,12 +49,24 @@ def build_driver(browser: str, headless: bool) -> "webdriver.Remote":
 
     if browser == "chrome":
         from selenium.webdriver.chrome.options import Options as ChromeOptions
+        import os
         opts = ChromeOptions()
         if headless:
             opts.add_argument("--headless=new")
+        # Improve autoplay behavior in CI/headless
+        opts.add_argument("--autoplay-policy=no-user-gesture-required")
+        opts.add_argument("--mute-audio")
+        # Usual stability flags
         opts.add_argument("--disable-gpu")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
+        # If GitHub Actions provides CHROME_PATH, use it
+        chrome_path = os.environ.get("CHROME_PATH")
+        if chrome_path:
+            try:
+                opts.binary_location = chrome_path
+            except Exception:
+                pass
         driver = webdriver.Chrome(options=opts)
 
     elif browser == "firefox":
@@ -74,6 +86,11 @@ def build_driver(browser: str, headless: bool) -> "webdriver.Remote":
     # Make page loads a bit more resilient
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(60)
+    try:
+        # Ensure a decent viewport so the player is visible in headless/CI
+        driver.set_window_size(1280, 900)
+    except Exception:
+        pass
     return driver
 
 
@@ -263,6 +280,11 @@ def ensure_video_playing(driver) -> None:
         driver.execute_script(
             """
             const vids = Array.from(document.querySelectorAll('video'));
+            // Bring first video into view and focus body for key events
+            if (vids.length) {
+              try { vids[0].scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
+              try { (document.body||{}).focus && document.body.focus(); } catch(e) {}
+            }
             for (const v of vids) {
               try {
                 v.muted = true; // Autoplay policies usually allow muted playback
@@ -324,6 +346,7 @@ def ensure_video_playing(driver) -> None:
                     """
                     const v = document.querySelector('video');
                     if (!v) return false;
+                    try { v.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
                     const r = v.getBoundingClientRect();
                     const x = r.left + r.width/2;
                     const y = r.top + r.height/2;
@@ -370,6 +393,7 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
     last_current_time = -1.0
     last_log_time = start
     announced_duration = False
+    zero_progress_since = start  # Track how long currentTime stays ~0
     saw_near_end = False  # Detect when we've reached near the duration once
 
     # Wait for video to be ready (duration > 0)
@@ -449,6 +473,12 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
         if cur > last_current_time + 0.5:
             last_current_time = cur
             last_progress_time = now
+            zero_progress_since = now if cur > 0.1 else zero_progress_since
+
+        # If we've had no measurable progress for > 10s, try to re-trigger playback
+        if cur < 0.1 and now - zero_progress_since > 10.0:
+            ensure_video_playing(driver)
+            zero_progress_since = now
 
         # Optional progress logging
         if progress:
