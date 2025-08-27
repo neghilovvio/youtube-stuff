@@ -389,6 +389,8 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
     announced_duration = False
     zero_progress_since = start  # Track how long currentTime stays ~0
     saw_near_end = False  # Detect when we've reached near the duration once
+    no_progress_retries = 0  # Limit repeated re-triggers
+    max_no_progress_retries = 3
 
     # Wait for video to be ready (duration > 0)
     for _ in range(60):
@@ -407,6 +409,21 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
         except Exception:
             pass
         time.sleep(0.5)
+
+    # Additionally, give the player a moment to reach readyState >= 2 (have current data)
+    try:
+        for _ in range(10):
+            ok = driver.execute_script(
+                """
+                const vids = Array.from(document.querySelectorAll('video'));
+                return vids.some(v => (v.readyState||0) >= 2);
+                """
+            )
+            if ok:
+                break
+            time.sleep(0.5)
+    except Exception:
+        pass
 
     # Main poll loop
     while True:
@@ -491,6 +508,11 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
 
             ensure_video_playing(driver)
             zero_progress_since = now
+            no_progress_retries += 1
+            if no_progress_retries >= max_no_progress_retries:
+                if progress:
+                    print("No progress after multiple retries; bailing out. Artifacts uploaded if in CI.")
+                return
 
         # Optional progress logging
         if progress:
