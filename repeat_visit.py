@@ -22,6 +22,8 @@ Usage examples:
 import argparse
 import time
 import sys
+import os
+from datetime import datetime
 from typing import Optional
 
 # --- Optional fallback if user chooses system-browser mode ---
@@ -469,6 +471,24 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: b
 
         # If we've had no measurable progress for > 10s, try to re-trigger playback
         if cur < 0.1 and now - zero_progress_since > 10.0:
+            # Save debug artifacts to help diagnose headless CI issues
+            try:
+                os.makedirs('artifacts', exist_ok=True)
+                ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                png = f"artifacts/ci-stuck-{ts}.png"
+                html = f"artifacts/ci-stuck-{ts}.html"
+                try:
+                    driver.save_screenshot(png)
+                except Exception:
+                    pass
+                try:
+                    with open(html, 'w', encoding='utf-8') as f:
+                        f.write(driver.page_source or '')
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
             ensure_video_playing(driver)
             zero_progress_since = now
 
