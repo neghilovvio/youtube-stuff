@@ -2,8 +2,8 @@ name: Run background task
 
 on:
   workflow_dispatch: {}           # allow manual runs from the Actions tab
-  schedule:
-    - cron: "0 */3 * * *"         # every 3 hours
+  # schedule:
+  #   - cron: "0 */3 * * *"         # every 3 hours
 
 concurrency:
   group: background-task
