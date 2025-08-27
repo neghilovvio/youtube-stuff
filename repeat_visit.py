@@ -29,6 +29,13 @@ from typing import Optional
 # --- Optional fallback if user chooses system-browser mode ---
 import webbrowser
 
+# --- Load .env for local development (safe way to provide creds without hardcoding) ---
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 # --- Selenium imports are optional; only needed in selenium mode ---
 try:
     from selenium import webdriver
@@ -155,7 +162,7 @@ def accept_google_consent(driver) -> None:
         try:
             clicked = driver.execute_script(
                 """
-                const texts = ["Accept all", "I agree", "I'm OK with that", "Accept", "Agree", "Accept All"];
+                const texts = ["Sign In", "I agree", "I'm OK with that", "Accept", "Agree", "Accept All"];
                 function findButton() {
                   const buttons = Array.from(document.querySelectorAll('button, tp-yt-paper-button'));
                   for (const b of buttons) {
@@ -242,6 +249,90 @@ def accept_google_consent(driver) -> None:
         time.sleep(0.5)
     # If we exit the loop, consent likely not present; proceed gracefully
 
+
+def maybe_youtube_signin(driver) -> None:
+    """
+    Optionally sign in to YouTube if a sign-in prompt/flow is encountered.
+    Uses environment variables YT_EMAIL and YT_PASSWORD. No logging of secrets.
+
+    The function is best-effort and will give up quickly if blocked by
+    CAPTCHA/2SV/unusual activity. Safe to call multiple times.
+    """
+    email = os.environ.get("YT_EMAIL")
+    password = os.environ.get("YT_PASSWORD")
+    if not email or not password:
+        return
+
+    def _on_accounts_page() -> bool:
+        try:
+            url = (driver.current_url or "").lower()
+            return "accounts.google.com" in url
+        except Exception:
+            return False
+
+    # If we're still on YouTube, try clicking a "Sign in" button/link if present
+    try:
+        if not _on_accounts_page():
+            # Common sign-in entry points on YouTube
+            sign_in_selectors = [
+                'a[href*="accounts.google.com"]',
+                'tp-yt-paper-button[aria-label*="sign in" i]',
+                'ytd-button-renderer a[href*="accounts.google.com"]',
+                'a[aria-label*="Sign in" i]'
+            ]
+            for sel in sign_in_selectors:
+                try:
+                    el = WebDriverWait(driver, 2).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, sel))
+                    )
+                    el.click()
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Now, if we are on accounts.google.com, attempt the basic email/password flow
+    try:
+        if _on_accounts_page():
+            # Email step
+            try:
+                email_input = WebDriverWait(driver, 6).until(
+                    EC.presence_of_element_located((By.ID, "identifierId"))
+                )
+                email_input.clear()
+                email_input.send_keys(email)
+                next_btn = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.ID, "identifierNext"))
+                )
+                next_btn.click()
+            except Exception:
+                return
+
+            # Password step
+            try:
+                pwd_input = WebDriverWait(driver, 8).until(
+                    EC.presence_of_element_located((By.NAME, "Passwd"))
+                )
+                pwd_input.clear()
+                pwd_input.send_keys(password)
+                pw_next = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.ID, "passwordNext"))
+                )
+                pw_next.click()
+            except Exception:
+                return
+
+            # Give a brief moment for potential redirects; don't wait long
+            try:
+                WebDriverWait(driver, 6).until(
+                    lambda d: "accounts.google.com" not in (d.current_url or "").lower()
+                )
+            except Exception:
+                # Stay quiet; proceed regardless
+                pass
+    except Exception:
+        pass
 
 def ensure_video_playing(driver) -> None:
     """
@@ -573,8 +664,9 @@ def run_selenium_mode(
                 except Exception:
                     pass
 
-                # Handle consent and start playback if requested
+                # Handle consent, optional sign-in, and start playback if requested
                 accept_google_consent(driver)
+                maybe_youtube_signin(driver)
                 if watch_until_end:
                     ensure_video_playing(driver)
                     wait_until_video_ended(driver, progress=progress)
@@ -589,6 +681,7 @@ def run_selenium_mode(
                             lambda d: d.execute_script("return document.readyState") == "complete"
                         )
                         accept_google_consent(driver)
+                        maybe_youtube_signin(driver)
                     except Exception:
                         pass
 

@@ -57,6 +57,8 @@ jobs:
         env:
           # Example: pass secrets if needed, define any env vars here
           PYTHONUNBUFFERED: '1'
+          YT_EMAIL: ${{ secrets.YT_EMAIL }}
+          YT_PASSWORD: ${{ secrets.YT_PASSWORD }}
         run: |
           echo "Running URL: ${{ matrix.url }}"
           export CHROME_BIN=/usr/bin/chromium-browser
