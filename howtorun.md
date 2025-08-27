@@ -8,5 +8,7 @@ deactivate
 uv run python content_generator.py "downloads/robot_workers/robot_workers.txt"
 
 
-uv run python repeat_visit.py --url "https://www.youtube.com/watch?v=B04b1czi0WM"  --views 1 --browser chrome --watch-until-end
+uv run python repeat_visit.py --url "https://youtube.com/shorts/G8gDaYNPDcs"  --views 1 --browser chrome --watch-until-end --progress --headless
+
+uv run python repeat_visit.py --url "https://www.youtube.com/watch?v=B04b1czi0WM"  --views 1 --browser chrome --watch-until-end --progress 
 

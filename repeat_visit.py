@@ -238,49 +238,139 @@ def ensure_video_playing(driver) -> None:
     Try to start playback for an HTML5 <video> (e.g., YouTube). Tries JS .play(),
     clicking common play buttons, and keyboard shortcuts ('k').
     """
+    # Detect if we're on a YouTube Shorts page to choose a different start strategy
+    is_shorts = False
     try:
-        # Prefer explicit JS play on all videos
+        cur_url = driver.current_url or ""
+        if "/shorts/" in cur_url:
+            is_shorts = True
+        else:
+            # Fallback DOM check
+            is_shorts = bool(driver.execute_script(
+                """
+                try {
+                  const p = (document.location && document.location.pathname) || '';
+                  if (p.includes('/shorts/')) return true;
+                  if (document.querySelector('ytd-reel-video-renderer, #shorts-container, ytd-shorts')) return true;
+                  return false;
+                } catch (e) { return false; }
+                """
+            ))
+    except Exception:
+        pass
+    try:
+        # Prefer explicit JS play on all videos. Force muted to allow autoplay in headless.
         driver.execute_script(
             """
             const vids = Array.from(document.querySelectorAll('video'));
-            for (const v of vids) { try { v.muted = v.muted || false; v.play().catch(()=>{}); } catch(e){} }
+            for (const v of vids) {
+              try {
+                v.muted = true; // Autoplay policies usually allow muted playback
+                v.play().catch(()=>{});
+              } catch(e) {}
+            }
             return vids.length;
             """
         )
     except Exception:
         pass
 
-    # Try clicking YouTube player button
-    for sel in [
-        'button.ytp-play-button',
-        '#movie_player button[aria-label*="Play" i]',
-        '[aria-label="Play"]',
-        'video',
-    ]:
-        try:
-            el = WebDriverWait(driver, 2).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, sel))
-            )
-            el.click()
-            break
-        except Exception:
-            continue
-
-    # Keyboard fallback ('k' toggles play on YouTube)
+    # If already playing, do nothing to avoid toggling pause
     try:
-        driver.find_element(By.TAG_NAME, "body").send_keys('k')
+        is_playing = bool(driver.execute_script(
+            """
+            const vids = Array.from(document.querySelectorAll('video'));
+            return vids.some(v => v && v.currentTime > 0.1 && v.paused === false);
+            """
+        ))
+        if is_playing:
+            return
     except Exception:
         pass
 
+    # Try clicking only for Shorts. Avoid clicking for regular videos to not pause autoplay.
+    if is_shorts:
+        click_selectors = [
+            'button.ytp-play-button',
+            '#movie_player button[aria-label*="Play" i]',
+            '[aria-label="Play"]',
+            'video',  # Shorts often require clicking directly on the video area
+        ]
+        for sel in click_selectors:
+            try:
+                el = WebDriverWait(driver, 2).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, sel))
+                )
+                el.click()
+                break
+            except Exception:
+                continue
 
-def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600) -> None:
+    # For Shorts specifically, explicitly click the <video> element center via JS as a user gesture
+    if is_shorts:
+        # Re-check playing before JS click gesture
+        try:
+            is_playing = bool(driver.execute_script(
+                """
+                const vids = Array.from(document.querySelectorAll('video'));
+                return vids.some(v => v && v.currentTime > 0.1 && v.paused === false);
+                """
+            ))
+        except Exception:
+            is_playing = False
+        if not is_playing:
+            try:
+                clicked = driver.execute_script(
+                    """
+                    const v = document.querySelector('video');
+                    if (!v) return false;
+                    const r = v.getBoundingClientRect();
+                    const x = r.left + r.width/2;
+                    const y = r.top + r.height/2;
+                    const evOpts = {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y};
+                    v.dispatchEvent(new MouseEvent('mousedown', evOpts));
+                    v.dispatchEvent(new MouseEvent('mouseup', evOpts));
+                    v.dispatchEvent(new MouseEvent('click', evOpts));
+                    try { v.play().catch(()=>{}); } catch(e) {}
+                    return true;
+                    """
+                )
+                _ = clicked
+            except Exception:
+                pass
+
+    # Keyboard fallback ('k' toggles play on YouTube)
+    try:
+        # Only send 'k' if still not playing to avoid pausing playback
+        is_playing = bool(driver.execute_script(
+            """
+            const vids = Array.from(document.querySelectorAll('video'));
+            return vids.some(v => v && v.currentTime > 0.1 && v.paused === false);
+            """
+        ))
+    except Exception:
+        is_playing = False
+    if not is_playing:
+        try:
+            driver.find_element(By.TAG_NAME, "body").send_keys('k')
+        except Exception:
+            pass
+
+
+def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600, progress: bool = False) -> None:
     """
     Poll the page until a <video> reports ended=true or currentTime >= duration.
+    Also detects looped playback (e.g., YouTube Shorts): once near-end is reached
+    and currentTime resets significantly, treat as a single play finished.
+
     Uses a generous safety hard cap to avoid infinite waits.
     """
     start = time.time()
     last_progress_time = start
     last_current_time = -1.0
+    last_log_time = start
+    announced_duration = False
+    saw_near_end = False  # Detect when we've reached near the duration once
 
     # Wait for video to be ready (duration > 0)
     for _ in range(60):
@@ -318,18 +408,64 @@ def wait_until_video_ended(driver, hard_cap_seconds: int = 4 * 3600) -> None:
             )
             if ended and isinstance(ended, dict):
                 if ended.get('ended'):
+                    if progress:
+                        dur = float(ended.get('duration', 0) or 0)
+                        cur = float(ended.get('cur', 0) or 0)
+                        def _fmt(s: float) -> str:
+                            m = int(s // 60)
+                            s2 = int(s % 60)
+                            return f"{m:02d}:{s2:02d}"
+                        if dur > 0:
+                            pct = int(min(100, max(0, (cur / dur) * 100)))
+                            print(f"Playback finished: t={_fmt(cur)} / dur={_fmt(dur)} ({pct}%)")
+                        else:
+                            print(f"Playback finished: t={_fmt(cur)}")
                     return
                 cur = float(ended.get('cur', 0) or 0)
+                dur = float(ended.get('duration', 0) or 0)
             else:
                 # Fallback if structure changes
                 cur = 0.0
+                dur = 0.0
         except Exception:
             cur = 0.0
+            dur = 0.0
 
         now = time.time()
+        # Loop detection: once we were near the end, a significant drop indicates a loop
+        if dur > 0 and cur >= max(0.0, dur - 0.75):
+            saw_near_end = True
+
+        if saw_near_end and last_current_time >= 0 and cur < last_current_time - 1.0:
+            if progress:
+                def _fmt(s: float) -> str:
+                    m = int(s // 60)
+                    s2 = int(s % 60)
+                    return f"{m:02d}:{s2:02d}"
+                pct = int(min(100, max(0, (last_current_time / max(dur, 1e-6)) * 100))) if dur > 0 else 0
+                print(f"Detected loop/reset after reaching near end: t={_fmt(last_current_time)} / dur={_fmt(dur)} ({pct}%). Treating as finished.")
+            return
+
         if cur > last_current_time + 0.5:
             last_current_time = cur
             last_progress_time = now
+
+        # Optional progress logging
+        if progress:
+            def _fmt(s: float) -> str:
+                m = int(s // 60)
+                s2 = int(s % 60)
+                return f"{m:02d}:{s2:02d}"
+            if dur > 0 and not announced_duration:
+                print(f"Detected duration: { _fmt(dur) }")
+                announced_duration = True
+            if now - last_log_time >= 5.0:
+                if dur > 0:
+                    pct = int(min(100, max(0, (cur / dur) * 100)))
+                    print(f"Progress: t={_fmt(cur)} / dur={_fmt(dur)} ({pct}%)")
+                else:
+                    print(f"Progress: t={_fmt(cur)}")
+                last_log_time = now
 
         # Stalled for > 2 minutes: try to re-trigger play once
         if now - last_progress_time > 120:
@@ -353,6 +489,7 @@ def run_selenium_mode(
     click_selector: Optional[str],
     reload_between_views: bool,
     watch_until_end: bool,
+    progress: bool,
 ) -> None:
     if webdriver is None:
         raise RuntimeError(
@@ -377,7 +514,7 @@ def run_selenium_mode(
                 accept_google_consent(driver)
                 if watch_until_end:
                     ensure_video_playing(driver)
-                    wait_until_video_ended(driver)
+                    wait_until_video_ended(driver, progress=progress)
                 else:
                     do_interaction(driver, interaction, click_selector)
                     time.sleep(duration)
@@ -414,7 +551,7 @@ def run_selenium_mode(
                 accept_google_consent(driver)
                 if watch_until_end:
                     ensure_video_playing(driver)
-                    wait_until_video_ended(driver)
+                    wait_until_video_ended(driver, progress=progress)
                 else:
                     do_interaction(driver, interaction, click_selector)
                     time.sleep(duration)
@@ -463,6 +600,8 @@ def main():
                         help="Refresh the page after each view (Selenium only)")
     parser.add_argument("--watch-until-end", action="store_true",
                         help="For pages with <video> (e.g., YouTube), start playback and wait until the video ends")
+    parser.add_argument("--progress", action="store_true",
+                        help="Print detected duration and periodic playback progress")
 
     args = parser.parse_args()
 
@@ -483,6 +622,7 @@ def main():
             click_selector=args.click_selector,
             reload_between_views=args.reload_between_views,
             watch_until_end=args.watch_until_end,
+            progress=args.progress,
         )
     except WebDriverException as e:
         print("Selenium WebDriver error:", e, file=sys.stderr)
