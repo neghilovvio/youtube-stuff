@@ -9,3 +9,6 @@ downloads/*
 
 old-video-downloads/
 old-transcript-downloads/
+
+# Environment variables
+.env

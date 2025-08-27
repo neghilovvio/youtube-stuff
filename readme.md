@@ -389,6 +389,33 @@ python cleanup_downloads.py
 
 This will scan your `downloads/` directory and remove any partial or temporary files, leaving only your completed videos and audio files. Most users will not need this, but it's handy for keeping your downloads folder tidy after interruptions.
 
+## 🧠 AI Content Generation (YouTube + LinkedIn)
+
+Generate a YouTube SEO title/description and a LinkedIn post from any transcript using OpenAI.
+
+Requirements:
+- Set your API key: `export OPENAI_API_KEY=sk-...`
+- Dependencies: `openai` (already in `requirements.txt`)
+
+Usage:
+
+```bash
+# From a transcript file (e.g., produced by single_downloader.py)
+python content_generator.py path/to/transcript.txt
+
+# Optional: choose model (defaults to gpt-4o-mini or $OPENAI_MODEL)
+python content_generator.py path/to/transcript.txt --model gpt-4o-mini
+```
+
+Outputs (written next to the transcript):
+- `<name>_youtube_title.txt`
+- `<name>_youtube_description.txt`
+- `<name>_linkedin_post.md`
+
+Notes:
+- The LinkedIn post aims for an ironic, engaging tone with short paragraphs and relevant hashtags.
+- The YouTube description includes a strong hook, keywords, and hashtags.
+
 ## 👨‍🍳 Who cooked this?
 
 [![Pierre-Henry Soria](https://s.gravatar.com/avatar/a210fe61253c43c869d71eaed0e90149?s=200)](https://PH7.me 'Pierre-Henry Soria personal website')
