@@ -16,8 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         url:
-          - "https://www.youtube.com/watch?v=B04b1czi0WM"
-          - "https://www.youtube.com/watch?v=rNqGcO6w5Ic"
+          - "https://youtube.com/shorts/KbCeRrgK_IU"
+          - "https://youtube.com/shorts/G8gDaYNPDcs"
     timeout-minutes: 55            # be kind to the runner; set what you need
     steps:
       - name: Check out repo
