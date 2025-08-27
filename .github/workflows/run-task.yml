@@ -1,0 +1,58 @@
+name: Run background task
+
+on:
+  workflow_dispatch: {}           # allow manual runs from the Actions tab
+  schedule:
+    - cron: "0 * * * *"           # every hour; change as needed
+
+concurrency:
+  group: background-task
+  cancel-in-progress: false        # avoid overlapping if a run is slow
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        url:
+          - "https://www.youtube.com/watch?v=B04b1czi0WM"
+          - "https://www.youtube.com/watch?v=rNqGcO6w5Ic"
+    timeout-minutes: 55            # be kind to the runner; set what you need
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Chrome (for Selenium)
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+
+      - name: Show Chrome version
+        run: |
+          "${{ steps.setup-chrome.outputs.chrome-path }}" --version
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run task
+        env:
+          # Example: pass secrets if needed, define any env vars here
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          echo "Running URL: ${{ matrix.url }}"
+          python repeat_visit.py --url "${{ matrix.url }}" --views 1 --browser chrome --watch-until-end --headless --reuse
